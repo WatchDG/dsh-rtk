@@ -1,62 +1,75 @@
-// Status route and version probe: the Settings → RTK section reads GET /rtk/status.
+// Settings routes: the Settings → RTK section reads status, gain, verify,
+// and reset over authenticated Host routes.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-import { normalizeConfig } from '../lib/config.js'
-import { STATUS_PATH, mount, statusView } from '../lib/plugin.js'
-import { createRtkRunner } from '../lib/runner.js'
+import {
+  GAIN_PATH,
+  RESET_PATH,
+  STATUS_PATH,
+  VERIFY_PATH,
+  mount,
+  statusView,
+} from '../lib/plugin.js'
+import { GAIN_VIEWS, createRtkRunner } from '../lib/runner.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (relative) => readFileSync(path.join(root, relative), 'utf8')
 
-test('STATUS_PATH is the documented settings route', () => {
-  assert.equal(STATUS_PATH, '/rtk/status')
-})
-
-test('statusView keeps the settings payload shape', () => {
-  assert.deepEqual(statusView({ available: true, version: 'rtk 0.50.0' }), {
-    available: true,
-    version: 'rtk 0.50.0',
-  })
-  assert.deepEqual(statusView({ available: false, version: null }), {
-    available: false,
-    version: null,
-  })
-  assert.deepEqual(statusView({ available: true, version: 42 }), {
-    available: true,
-    version: null,
-  })
-})
-
-test('a missing executable reports no version instead of throwing', async () => {
-  const runner = createRtkRunner({
-    timeoutMs: 2000,
-    executable: `dsh-rtk-missing-${process.pid}`,
-  })
-  assert.equal(await runner.getVersion(), null)
-  assert.equal(await runner.isAvailable(), false)
-})
+/** Fake runner with controllable answers for every boundary. */
+function makeRunner(overrides = {}) {
+  return {
+    isAvailable: async () => true,
+    getVersion: async () => 'rtk 0.50.0',
+    rewrite: async () => null,
+    getGain: async () => ({ ok: true, kind: 'json', data: { summary: { total_commands: 7 } } }),
+    verifyRtk: async () => ({ ok: true, text: '154/154 tests passed' }),
+    resetGain: async () => ({ ok: true, text: 'reset done' }),
+    cacheSize: () => 3,
+    ...overrides,
+  }
+}
 
 /**
- * Mount with a fake context that captures the webServer registration.
+ * Mount with a fake context that captures every registered route and the
+ * pre-execute hook.
  */
-function mountStatus({ runner, rejection } = {}) {
-  let route
+function mountRoutes({ config = {}, runner = makeRunner(), rejection } = {}) {
+  const routes = new Map()
+  const listeners = new Map()
+  const sections = []
+  const settingsCalls = []
   const ctx = {
     logger: { warn: () => {} },
-    systemPrompt: { section: () => () => {}, getSectionOrder: () => 1010 },
-    on: () => () => {},
+    fiber: {},
+    systemPrompt: {
+      section: (section) => {
+        sections.push(section)
+        return () => {}
+      },
+      getSectionOrder: () => 1010,
+    },
+    on: (event, listener) => {
+      listeners.set(event, listener)
+      return () => {}
+    },
     inject(deps, callback) {
-      if (deps[0] === 'webServer') {
+      if (deps[0] === 'settings') {
+        settingsCalls.push(deps)
+        callback({
+          effect: (fn) => fn(),
+          settings: { configure: () => {} },
+        })
+      } else if (deps[0] === 'webServer') {
         callback({
           effect: (fn) => fn(),
           connection: { requestRejection: () => rejection },
           webServer: {
             register(registered) {
-              route = registered
+              routes.set(registered.path, registered)
               return () => {}
             },
           },
@@ -64,17 +77,13 @@ function mountStatus({ runner, rejection } = {}) {
       }
     },
   }
-  mount(
-    ctx,
-    normalizeConfig({}),
-    runner ?? { isAvailable: async () => true, getVersion: async () => 'rtk 0.50.0' },
-  )
-  return { route }
+  mount(ctx, config, runner)
+  return { routes, listeners, sections, settingsCalls }
 }
 
-async function exchange(route, { method = 'GET' } = {}) {
+async function exchange(route, { method = 'GET', url = '/' } = {}) {
   let statusCode = 0
-  let headers = {}
+  const headers = {}
   let body = ''
   const res = {
     set statusCode(value) {
@@ -85,107 +94,186 @@ async function exchange(route, { method = 'GET' } = {}) {
     },
     writeHead(code, nextHeaders) {
       statusCode = code
-      headers = { ...headers, ...nextHeaders }
+      Object.assign(headers, nextHeaders)
     },
     end(text) {
       body = text ?? ''
     },
   }
-  await route.handler({ method, headers: {} }, res)
-  return { statusCode, headers, body }
+  await route.handler({ method, url, headers: {} }, res)
+  return { statusCode, headers, body: body ? JSON.parse(body) : body }
 }
 
+test('route paths are the documented settings channels', () => {
+  assert.equal(STATUS_PATH, '/rtk/status')
+  assert.equal(GAIN_PATH, '/rtk/gain')
+  assert.equal(VERIFY_PATH, '/rtk/verify')
+  assert.equal(RESET_PATH, '/rtk/gain/reset')
+  assert.ok(GAIN_VIEWS.includes('summary'))
+  assert.ok(GAIN_VIEWS.includes('failures'))
+})
+
+test('statusView keeps the extended settings payload shape', () => {
+  const full = statusView({
+    available: true,
+    version: 'rtk 0.50.0',
+    settings: {
+      hook: 'off',
+      rules: true,
+      tools: new Set(['bash']),
+      exclude: new Set(['make']),
+      timeoutMs: 5000,
+    },
+    stats: { evaluated: 2, rewritten: 1, denied: 1 },
+    cacheSize: 4,
+  })
+  assert.deepEqual(full, {
+    available: true,
+    version: 'rtk 0.50.0',
+    hook: 'off',
+    rules: true,
+    tools: ['bash'],
+    exclude: ['make'],
+    timeoutMs: 5000,
+    stats: { evaluated: 2, rewritten: 1, denied: 1 },
+    cacheSize: 4,
+  })
+  assert.deepEqual(statusView({ available: false, version: 42 }), {
+    available: false,
+    version: null,
+    hook: 'deny',
+    rules: true,
+    tools: ['pwsh', 'bash'],
+    exclude: [],
+    timeoutMs: 4000,
+    stats: { evaluated: 0, rewritten: 0, denied: 0 },
+    cacheSize: 0,
+  })
+})
+
+test('a missing executable reports no version instead of throwing', async () => {
+  const runner = createRtkRunner({
+    timeoutMs: 2000,
+    executable: `dsh-rtk-missing-${process.pid}`,
+  })
+  assert.equal(await runner.getVersion(), null)
+  assert.equal(await runner.isAvailable(), false)
+  assert.deepEqual(await runner.getGain(), { ok: false })
+  assert.deepEqual(await runner.verifyRtk(), { ok: false, text: '' })
+})
+
 test('the status route answers the settings page', async () => {
-  const { route } = mountStatus({})
+  const { routes } = mountRoutes({})
+  const route = routes.get('/rtk/status')
   assert.equal(route.kind, 'exact')
-  assert.equal(route.path, '/rtk/status')
 
   const ok = await exchange(route)
   assert.equal(ok.statusCode, 200)
   assert.match(ok.headers['content-type'], /application\/json/)
-  assert.deepEqual(JSON.parse(ok.body), { available: true, version: 'rtk 0.50.0' })
-
-  const wrongMethod = await exchange(route, { method: 'POST' })
-  assert.equal(wrongMethod.statusCode, 405)
+  assert.equal(ok.body.available, true)
+  assert.equal(ok.body.version, 'rtk 0.50.0')
+  assert.equal(ok.body.hook, 'deny')
+  assert.deepEqual(ok.body.tools, ['pwsh', 'bash'])
+  assert.deepEqual(ok.body.stats, { evaluated: 0, rewritten: 0, denied: 0 })
+  assert.equal(ok.body.cacheSize, 3)
 })
 
-test('the status route reports a missing binary', async () => {
-  const { route } = mountStatus({
-    runner: { isAvailable: async () => false, getVersion: async () => null },
+test('hook counters grow on the status channel', async () => {
+  const { routes, listeners } = mountRoutes({
+    runner: makeRunner({ rewrite: async () => 'rtk git status' }),
   })
-  const ok = await exchange(route)
-  assert.equal(ok.statusCode, 200)
-  assert.deepEqual(JSON.parse(ok.body), { available: false, version: null })
-})
-
-test('the status route tolerates a legacy runner without getVersion', async () => {
-  const { route } = mountStatus({ runner: { isAvailable: async () => true } })
-  const ok = await exchange(route)
-  assert.equal(ok.statusCode, 200)
-  assert.deepEqual(JSON.parse(ok.body), { available: true, version: null })
-})
-
-test('the status route refuses rejected browser callers', async () => {
-  const { route } = mountStatus({})
-  const rejected = await (async () => {
-    let statusCode = 0
-    let body = 'unset'
-    const res = {
-      set statusCode(value) {
-        statusCode = value
-      },
-      setHeader() {},
-      writeHead(code) {
-        statusCode = code
-      },
-      end(text) {
-        body = text ?? ''
-      },
-    }
-    await route.handler({ method: 'GET', headers: {} }, res)
-    return { statusCode, body }
-  })()
-  assert.equal(rejected.statusCode, 200)
-
-  const withRejection = (() => {
-    let captured
-    const ctx = {
-      logger: { warn: () => {} },
-      systemPrompt: { section: () => () => {}, getSectionOrder: () => 1010 },
-      on: () => () => {},
-      inject(deps, callback) {
-        if (deps[0] === 'webServer') {
-          callback({
-            effect: (fn) => fn(),
-            connection: { requestRejection: () => 403 },
-            webServer: {
-              register(registered) {
-                captured = registered
-                return () => {}
-              },
-            },
-          })
-        }
-      },
-    }
-    mount(ctx, normalizeConfig({}), { isAvailable: async () => true, getVersion: async () => 'rtk 0.50.0' })
-    return captured
-  })()
-  let statusCode = 0
-  await withRejection.handler(
-    { method: 'GET', headers: {} },
-    {
-      set statusCode(value) {
-        statusCode = value
-      },
-      setHeader() {},
-      writeHead(code) {
-        statusCode = code
-      },
-      end() {},
+  const hook = listeners.get('tools/pre-execute')
+  let proceeded = false
+  const decision = await hook(
+    { name: 'pwsh', arguments: { command: 'git status' }, signal: new AbortController().signal },
+    async () => {
+      proceeded = true
+      return { kind: 'allow' }
     },
   )
-  assert.equal(statusCode, 403)
+  assert.equal(decision.kind, 'deny')
+  assert.equal(proceeded, false)
+
+  const ok = await exchange(routes.get('/rtk/status'))
+  assert.deepEqual(ok.body.stats, { evaluated: 1, rewritten: 1, denied: 1 })
+})
+
+test('the gain route serves summary JSON', async () => {
+  const seen = []
+  const { routes } = mountRoutes({
+    runner: makeRunner({
+      getGain: async (query) => {
+        seen.push(query)
+        return { ok: true, kind: 'json', data: { summary: { total_commands: 7 } } }
+      },
+    }),
+  })
+  const ok = await exchange(routes.get('/rtk/gain'), { url: '/rtk/gain?view=summary&scope=global' })
+  assert.equal(ok.statusCode, 200)
+  assert.deepEqual(ok.body, { ok: true, kind: 'json', data: { summary: { total_commands: 7 } } })
+  assert.deepEqual(seen, [{ view: 'summary', project: false, projectPath: '' }])
+})
+
+test('the gain route forwards project scope and text views', async () => {
+  const seen = []
+  const { routes } = mountRoutes({
+    runner: makeRunner({
+      getGain: async (query) => {
+        seen.push(query)
+        return { ok: true, kind: 'text', text: 'daily table' }
+      },
+    }),
+  })
+  const ok = await exchange(routes.get('/rtk/gain'), {
+    url: '/rtk/gain?view=daily&scope=project&path=F%3A%5Cproj',
+  })
+  assert.equal(ok.statusCode, 200)
+  assert.equal(ok.body.text, 'daily table')
+  assert.deepEqual(seen, [{ view: 'daily', project: true, projectPath: 'F:\\proj' }])
+})
+
+test('the gain route rejects unknown views and scopes', async () => {
+  const { routes } = mountRoutes({})
+  const badView = await exchange(routes.get('/rtk/gain'), { url: '/rtk/gain?view=nope' })
+  assert.equal(badView.statusCode, 400)
+  const badScope = await exchange(routes.get('/rtk/gain'), { url: '/rtk/gain?view=top&scope=nope' })
+  assert.equal(badScope.statusCode, 400)
+})
+
+test('the gain route reports a missing boundary as 501', async () => {
+  const { routes } = mountRoutes({ runner: { isAvailable: async () => true, rewrite: async () => null } })
+  const ok = await exchange(routes.get('/rtk/gain'), { url: '/rtk/gain' })
+  assert.equal(ok.statusCode, 501)
+})
+
+test('the verify route serves the filter check', async () => {
+  const { routes } = mountRoutes({})
+  const ok = await exchange(routes.get('/rtk/verify'))
+  assert.equal(ok.statusCode, 200)
+  assert.deepEqual(ok.body, { ok: true, text: '154/154 tests passed' })
+})
+
+test('the reset route requires POST and serves the reset', async () => {
+  const { routes } = mountRoutes({})
+  const wrongMethod = await exchange(routes.get('/rtk/gain/reset'), { method: 'GET' })
+  assert.equal(wrongMethod.statusCode, 405)
+  const ok = await exchange(routes.get('/rtk/gain/reset'), { method: 'POST' })
+  assert.equal(ok.statusCode, 200)
+  assert.deepEqual(ok.body, { ok: true, text: 'reset done' })
+})
+
+test('settings routes refuse rejected browser callers', async () => {
+  const { routes } = mountRoutes({ rejection: 403 })
+  for (const route of routes.values()) {
+    const refused = await exchange(route, { method: route.path === RESET_PATH ? 'POST' : 'GET' })
+    assert.equal(refused.statusCode, 403)
+  }
+})
+
+test('the plugin owns its settings page instead of a generic form', () => {
+  const { settingsCalls, sections } = mountRoutes({})
+  assert.deepEqual(settingsCalls, [['settings']])
+  assert.equal(sections.length, 1)
 })
 
 test('mount works without a webServer scope (legacy fake contexts)', () => {
@@ -194,13 +282,18 @@ test('mount works without a webServer scope (legacy fake contexts)', () => {
     systemPrompt: { section: () => () => {}, getSectionOrder: () => 1010 },
     on: () => () => {},
   }
-  mount(ctx, normalizeConfig({}), { isAvailable: async () => true, getVersion: async () => 'rtk 0.50.0' })
+  mount(ctx, {}, makeRunner())
 })
 
-test('the web client registers a Settings section that reads /rtk/status', () => {
+test('the web client registers savings, config, and diagnostics', () => {
   const client = read('client.js')
   assert.match(client, /id:\s*['"]dsh-rtk['"]/)
   assert.match(client, /settings\.section/)
   assert.match(client, /\/rtk\/status/)
-  assert.match(client, /settings\.rtk/)
+  assert.match(client, /\/rtk\/gain/)
+  assert.match(client, /\/rtk\/verify/)
+  assert.match(client, /\/rtk\/gain\/reset/)
+  assert.match(client, /configForms/)
+  assert.match(client, /savingsTitle|Token savings/)
+  assert.match(client, /verifyRun|Run verify/)
 })

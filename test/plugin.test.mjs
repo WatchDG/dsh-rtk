@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { normalizeConfig, RULES_SECTION } from '../lib/config.js'
+import { RULES_SECTION } from '../lib/config.js'
 import { mount } from '../lib/plugin.js'
 
 /**
@@ -44,7 +44,7 @@ function createHarness({ config, available = true, rewrite = async () => null } 
     },
   }
 
-  mount(ctx, normalizeConfig(config), runner)
+  mount(ctx, config ?? {}, runner)
 
   const hook = listeners.get('tools/pre-execute')
 
@@ -70,8 +70,8 @@ test('registers one rules section after the shell tools guidance', () => {
   assert.equal(harness.sections.length, 1)
   assert.equal(harness.sections[0].name, RULES_SECTION)
   assert.equal(harness.sections[0].order, 1015)
-  assert.match(harness.sections[0].text, /rtk git status/)
-  assert.match(harness.sections[0].text, /RTK hook rejects/)
+  assert.match(harness.sections[0].text(), /rtk git status/)
+  assert.match(harness.sections[0].text(), /RTK hook rejects/)
 })
 
 test('denies a command that rtk can rewrite', async () => {
@@ -196,15 +196,46 @@ test('watches only the configured shell tools', async () => {
   assert.equal(bash.decision.kind, 'deny')
 })
 
-test('hook: off keeps the rules and registers no listener', () => {
-  const harness = createHarness({ config: { hook: 'off' } })
+test('hook: off keeps the rules and lets every command through', async () => {
+  const harness = createHarness({
+    config: { hook: 'off' },
+    rewrite: async () => 'rtk git status',
+  })
   assert.equal(harness.sections.length, 1)
-  assert.doesNotMatch(harness.sections[0].text, /RTK hook rejects/)
-  assert.equal(harness.listeners.has('tools/pre-execute'), false)
+  assert.doesNotMatch(harness.sections[0].text(), /RTK hook rejects/)
+  // The listener stays registered but reads config live, so flipping the
+  // setting back on needs no remount.
+  assert.equal(harness.listeners.has('tools/pre-execute'), true)
+  const { decision, proceeded } = await harness.run('pwsh', 'git status')
+  assert.equal(decision.kind, 'allow')
+  assert.equal(proceeded, true)
+  assert.deepEqual(harness.calls, [], 'the hook never reaches rtk while off')
 })
 
 test('rules: false keeps the hook and registers no section', () => {
   const harness = createHarness({ config: { rules: false } })
   assert.equal(harness.sections.length, 0)
   assert.equal(typeof harness.hook, 'function')
+})
+
+test('volatile config references apply without remounting', async () => {
+  let hook = 'deny'
+  const harness = createHarness({
+    config: { hook: { get: () => hook } },
+    rewrite: async () => 'rtk git status',
+  })
+  const denied = await harness.run('pwsh', 'git status')
+  assert.equal(denied.decision.kind, 'deny')
+
+  hook = 'off'
+  const allowed = await harness.run('pwsh', 'git status')
+  assert.equal(allowed.decision.kind, 'allow')
+  assert.equal(allowed.proceeded, true)
+})
+
+test('the unavailable warning points at the RTK installation', async () => {
+  const harness = createHarness({ available: false })
+  await harness.run('pwsh', 'git status')
+  assert.equal(harness.warnings.length, 1)
+  assert.match(harness.warnings[0], /rtk-ai\.app/)
 })

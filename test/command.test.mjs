@@ -5,10 +5,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  Config,
   DEFAULT_MAX_COMMAND_LENGTH,
   DEFAULT_TIMEOUT_MS,
   RULES_SECTION,
   normalizeConfig,
+  snapshot,
 } from '../lib/config.js'
 import {
   denyReason,
@@ -152,6 +154,8 @@ test('rulesText describes rules and the hook mode', () => {
   assert.match(deny, /rtk rewrite/)
   assert.match(deny, /rtk recall/)
   assert.match(deny, /rtk gain/)
+  assert.match(deny, /rtk gain --project/)
+  assert.match(deny, /Settings → RTK/)
   assert.match(deny, /rtk-ai\.app/)
   assert.match(deny, /RTK hook rejects/)
 
@@ -160,11 +164,35 @@ test('rulesText describes rules and the hook mode', () => {
   assert.doesNotMatch(off, /RTK hook rejects/)
 })
 
-test('rulesOrder follows the shell tools guidance with a fallback', () => {
-  assert.equal(rulesOrder({ getSectionOrder: (name) => (name === 'TOOL_PWSH' ? 1010 : undefined) }), 1015)
+test('rulesOrder follows the shell tools guidance with a fallback', () => {  assert.equal(rulesOrder({ getSectionOrder: (name) => (name === 'TOOL_PWSH' ? 1010 : undefined) }), 1015)
   assert.equal(rulesOrder({ getSectionOrder: () => undefined }), 1015)
   assert.equal(rulesOrder({ getSectionOrder: () => Number.NaN }), 1015)
   assert.equal(rulesOrder({}), 1015)
   assert.equal(rulesOrder(undefined), 1015)
   assert.equal(rulesOrder({ getSectionOrder: () => 0 }), 5)
+})
+
+test('Config exposes five volatile fields with defaults', () => {
+  assert.equal(Config.type, 'object')
+  assert.deepEqual(Object.keys(Config.dict).sort(), ['exclude', 'hook', 'rules', 'timeoutMs', 'tools'])
+  for (const field of ['rules', 'hook', 'tools', 'exclude', 'timeoutMs']) {
+    assert.equal(Config.dict[field].meta.volatile, true, `${field} is volatile`)
+  }
+})
+
+test('snapshot unwraps volatile references and tolerates plain values', () => {
+  let hook = 'off'
+  const live = snapshot({ hook: { get: () => hook }, tools: ['bash'] })
+  assert.equal(live.hook, 'off')
+  assert.deepEqual([...live.tools], ['bash'])
+  hook = 'deny'
+  assert.equal(snapshot({ hook: { get: () => hook } }).hook, 'deny')
+  assert.equal(snapshot(undefined).hook, 'deny')
+})
+
+test('snapshot round-trips an already-normalized config', () => {
+  const once = normalizeConfig({ tools: ['bash'], exclude: ['MAKE'] })
+  const twice = snapshot(once)
+  assert.deepEqual([...twice.tools], ['bash'])
+  assert.ok(twice.exclude.has('make'))
 })

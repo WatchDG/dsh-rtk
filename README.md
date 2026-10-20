@@ -113,13 +113,23 @@ rules in place the model normally writes `rtk …` directly.
 
 ### 3. Settings page
 
-**Settings → RTK** shows the live RTK version read from the Host with
-`rtk --version` (`GET /rtk/status`). When the binary is missing, the section
-says so and points to the installation guide instead of a version number.
+**Settings → RTK** has four blocks, all read from the Host (which is not
+sandboxed, so they work even when `rtk gain` fails inside an agent session):
+
+- **Version** — the live `rtk --version` (`GET /rtk/status`). When the binary
+  is missing, the section says so and points to the installation guide.
+- **Token savings** — the dashboard from `rtk gain` (`GET /rtk/gain`):
+  summary cards plus top/history/daily/weekly/monthly/recalls/failures
+  breakdowns, global or per-project scope, and a two-click statistics reset.
+- **Behavior** — the configuration below, editable in place with no restart.
+- **Diagnostics** — hook state on this Host, per-activation rewrite counters,
+  rewrite cache size, and a one-click `rtk verify` (`GET /rtk/verify`).
 
 ## Configuration
 
-Every field is optional. Override the `rtk` row in the profile's patch layer.
+Every field is optional. Override the `rtk` row in the profile's patch layer,
+or edit it live on the **Settings → RTK** page (the prompt rules section
+itself is registered once when the plugin loads).
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
@@ -168,7 +178,9 @@ the system are excluded automatically: `ls`, `dir`, `tree`, `find`, `cat`,
 1. `rtk --version` and `rtk gain` work in a terminal.
 2. The **Plugins** page (and the read-only **Settings → Plugins** list) shows
    **RTK Command Filter** / **RTK: фильтр вывода команд**, and it is enabled.
-3. **Settings → RTK** shows the same version as `rtk --version` in a terminal.
+3. **Settings → RTK** shows the same version as `rtk --version` in a terminal,
+   plus the savings dashboard (summary cards and breakdowns), the editable
+   behavior form, and diagnostics with a `rtk verify` button.
 4. In a new session, ask the agent to run `git status`: the first `pwsh` call is
    rejected with a reason that contains `rtk git status`, and the retried call is
    `rtk git status`.
@@ -188,9 +200,11 @@ the system are excluded automatically: `ls`, `dir`, `tree`, `find`, `cat`,
 
 ## Development
 
-No dependencies and no build step.
+One dependency (`@deepseek-ai/schemastery` for the settings schema) and no
+build step.
 
 ```bash
+npm ci                   # install the settings schema library
 npm test                 # unit tests + manifest checks; integration tests if rtk is installed
 npm run test:unit        # no rtk binary required
 npm run test:integration # skipped unless rtk is on PATH
@@ -200,13 +214,13 @@ npm run pack:check       # verify the npm package contents
 Layout:
 
 ```
-index.js              Host entry point: exports apply / name / inject
-client.js             Settings → RTK page: live `rtk --version` (web client)
-lib/config.js         config defaults and normalization
+index.js              Host entry point: exports apply / name / inject / Config
+client.js             Settings → RTK page: version, savings, behavior, diagnostics (web client)
+lib/config.js         Config schema, defaults, normalization, volatile snapshot
 lib/command.js        pure command analysis and deny message
 lib/rules.js          system-prompt rules text and section order
-lib/runner.js         execFile boundary for `rtk`, availability probe, version, rewrite cache
-lib/plugin.js         context wiring (prompt section + pre-execute listener + GET /rtk/status)
+lib/runner.js         execFile boundary for `rtk`: availability, version, gain, verify, reset, rewrite cache
+lib/plugin.js         context wiring (prompt section + pre-execute listener + /rtk/* settings routes)
 test/                 node:test suites (unit, manifest, integration)
 ```
 
@@ -219,8 +233,10 @@ test fails otherwise. See [CONTRIBUTING.md](CONTRIBUTING.md).
   command as a single `argv` element to `execFile` — never through a shell — so
   command text cannot inject shell syntax at this boundary.
 - The plugin performs no network access, sends no telemetry, and stores no
-  command history. RTK itself is third-party software; review its documentation
-  at **https://www.rtk-ai.app/** for its behavior and privacy settings.
+  command history. The Settings page talks only to the Host's own
+  authenticated `/rtk/*` routes. RTK itself is third-party software; review
+  its documentation at **https://www.rtk-ai.app/** for its behavior and
+  privacy settings.
 
 ## Links
 

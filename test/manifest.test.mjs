@@ -51,6 +51,11 @@ test('every runtime file is shipped by npm', () => {
   assert.ok(pkg.files.includes('cordis.patch.yml'))
   assert.ok(pkg.files.includes('locale/*.json'))
   assert.ok(pkg.files.includes('icon.svg'))
+  assert.ok(!pkg.files.includes('node_modules'), 'dependencies install from the registry')
+})
+
+test('the settings schema library is a declared dependency', () => {
+  assert.ok(pkg.dependencies['@deepseek-ai/schemastery'], 'Config needs schemastery')
 })
 
 test('every required file exists and lib/ has no unshipped modules', () => {
@@ -104,4 +109,5 @@ test('the plugin entry point exports the Host plugin contract', async () => {
   assert.equal(typeof module.apply, 'function')
   assert.equal(module.name, 'rtk')
   assert.deepEqual(module.inject, ['systemPrompt'])
+  assert.equal(module.Config?.type, 'object', 'settings service reads Config')
 })

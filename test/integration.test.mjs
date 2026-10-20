@@ -25,6 +25,28 @@ test('a real rtk rewrite returns the rtk form', { skip }, async () => {
   assert.equal(await runner.rewrite('git status && git diff'), 'rtk git status && rtk git diff')
 })
 
+test('a real rtk binary serves the savings summary', { skip }, async () => {
+  const runner = createRtkRunner({ timeoutMs: 15000 })
+  const summary = await runner.getGain({ view: 'summary' })
+  assert.equal(summary.ok, true)
+  assert.equal(summary.kind, 'json')
+  assert.equal(typeof summary.data.summary.total_commands, 'number')
+})
+
+test('a real rtk binary serves a text breakdown', { skip }, async () => {
+  const runner = createRtkRunner({ timeoutMs: 15000 })
+  const top = await runner.getGain({ view: 'top' })
+  assert.equal(top.ok, true)
+  assert.equal(top.kind, 'text')
+  assert.match(top.text, /RTK Token Savings/)
+})
+
+test('a real rtk binary verifies its filters', { skip }, async () => {
+  const runner = createRtkRunner({ timeoutMs: 15000 })
+  const result = await runner.verifyRtk()
+  assert.match(result.text, /tests passed/)
+})
+
 test('a missing executable reports unavailable instead of throwing', async () => {
   const runner = createRtkRunner({
     timeoutMs: 2000,
