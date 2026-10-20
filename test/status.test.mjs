@@ -124,7 +124,7 @@ test('statusView keeps the extended settings payload shape', () => {
       exclude: new Set(['make']),
       timeoutMs: 5000,
     },
-    stats: { evaluated: 2, rewritten: 1, denied: 1 },
+    stats: { evaluated: 2, rewritten: 1, denied: 1, byHead: { docker: 1, git: 2, cargo: 1 } },
     cacheSize: 4,
   })
   assert.deepEqual(full, {
@@ -135,7 +135,16 @@ test('statusView keeps the extended settings payload shape', () => {
     tools: ['bash'],
     exclude: ['make'],
     timeoutMs: 5000,
-    stats: { evaluated: 2, rewritten: 1, denied: 1 },
+    stats: {
+      evaluated: 2,
+      rewritten: 1,
+      denied: 1,
+      topHeads: [
+        ['git', 2],
+        ['docker', 1],
+        ['cargo', 1],
+      ],
+    },
     cacheSize: 4,
   })
   assert.deepEqual(statusView({ available: false, version: 42 }), {
@@ -146,7 +155,7 @@ test('statusView keeps the extended settings payload shape', () => {
     tools: ['pwsh', 'bash'],
     exclude: [],
     timeoutMs: 4000,
-    stats: { evaluated: 0, rewritten: 0, denied: 0 },
+    stats: { evaluated: 0, rewritten: 0, denied: 0, topHeads: [] },
     cacheSize: 0,
   })
 })
@@ -174,7 +183,7 @@ test('the status route answers the settings page', async () => {
   assert.equal(ok.body.version, 'rtk 0.50.0')
   assert.equal(ok.body.hook, 'deny')
   assert.deepEqual(ok.body.tools, ['pwsh', 'bash'])
-  assert.deepEqual(ok.body.stats, { evaluated: 0, rewritten: 0, denied: 0 })
+  assert.deepEqual(ok.body.stats, { evaluated: 0, rewritten: 0, denied: 0, topHeads: [] })
   assert.equal(ok.body.cacheSize, 3)
 })
 
@@ -195,7 +204,31 @@ test('hook counters grow on the status channel', async () => {
   assert.equal(proceeded, false)
 
   const ok = await exchange(routes.get('/rtk/status'))
-  assert.deepEqual(ok.body.stats, { evaluated: 1, rewritten: 1, denied: 1 })
+  assert.deepEqual(ok.body.stats, { evaluated: 1, rewritten: 1, denied: 1, topHeads: [['git', 1]] })
+})
+
+test('top rewritten heads are ranked on the status channel', async () => {
+  const { routes, listeners } = mountRoutes({
+    runner: makeRunner({
+      rewrite: async (command) => (command.startsWith('git') ? 'rtk git status' : `rtk ${command}`),
+    }),
+  })
+  const hook = listeners.get('tools/pre-execute')
+  const run = (command) =>
+    hook(
+      { name: 'pwsh', arguments: { command }, signal: new AbortController().signal },
+      async () => ({ kind: 'allow' }),
+    )
+  await run('git status')
+  await run('docker ps')
+  await run('git diff')
+  await run('git status')
+
+  const ok = await exchange(routes.get('/rtk/status'))
+  assert.deepEqual(ok.body.stats.topHeads, [
+    ['git', 3],
+    ['docker', 1],
+  ])
 })
 
 test('the gain route serves summary JSON', async () => {
@@ -293,6 +326,10 @@ test('the web client registers savings, config, and diagnostics', () => {
   assert.match(client, /\/rtk\/gain/)
   assert.match(client, /\/rtk\/verify/)
   assert.match(client, /\/rtk\/gain\/reset/)
+  assert.match(client, /topHeads|topHeadsLabel/)
+  assert.match(client, /copyYaml|Copy patch YAML/)
+  assert.match(client, /resetDefaults|Reset to defaults/)
+  assert.match(client, /view\.graph|Daily graph/)
   assert.match(client, /configForms/)
   assert.match(client, /savingsTitle|Token savings/)
   assert.match(client, /verifyRun|Run verify/)

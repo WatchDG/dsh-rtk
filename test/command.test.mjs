@@ -13,6 +13,7 @@ import {
   snapshot,
 } from '../lib/config.js'
 import {
+  commandHead,
   denyReason,
   hasSafeSyntax,
   isExcluded,
@@ -138,6 +139,14 @@ test('isExcluded matches command heads, paths, and .exe suffixes', () => {
   for (const command of ['makefile build', 'msbuild', 'git status']) {
     assert.equal(isExcluded(command, config), false, command)
   }
+})
+
+test('commandHead extracts the lowercased binary of the first segment', () => {
+  assert.equal(commandHead('git status'), 'git')
+  assert.equal(commandHead('GIT status && docker ps'), 'git')
+  assert.equal(commandHead('C:\\tools\\make.exe build'), 'make')
+  assert.equal(commandHead('/usr/bin/docker ps'), 'docker')
+  assert.equal(commandHead(''), '')
 })
 
 test('denyReason names the original command, the rewrite, and the escape hatch', () => {

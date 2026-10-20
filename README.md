@@ -119,11 +119,14 @@ sandboxed, so they work even when `rtk gain` fails inside an agent session):
 - **Version** — the live `rtk --version` (`GET /rtk/status`). When the binary
   is missing, the section says so and points to the installation guide.
 - **Token savings** — the dashboard from `rtk gain` (`GET /rtk/gain`):
-  summary cards plus top/history/daily/weekly/monthly/recalls/failures
-  breakdowns, global or per-project scope, and a two-click statistics reset.
-- **Behavior** — the configuration below, editable in place with no restart.
-- **Diagnostics** — hook state on this Host, per-activation rewrite counters,
-  rewrite cache size, and a one-click `rtk verify` (`GET /rtk/verify`).
+  summary cards plus top/history/daily/weekly/monthly/recalls/failures/graph
+  breakdowns, global or per-project scope with directory history, and a
+  two-click statistics reset.
+- **Behavior** — the configuration below, editable in place with no restart;
+  extra buttons copy the profile-patch YAML and reset everything to defaults.
+- **Diagnostics** — hook state on this Host, per-activation rewrite counters
+  with top rewritten command heads, rewrite cache size, and a one-click
+  `rtk verify` (`GET /rtk/verify`).
 
 ## Configuration
 

@@ -17,7 +17,7 @@ window.__ModuleLoader__.load({
     const VERIFY_PATH = '/rtk/verify'
     const RESET_PATH = '/rtk/gain/reset'
 
-    const GAIN_VIEWS = ['summary', 'top', 'history', 'daily', 'weekly', 'monthly', 'recalls', 'failures']
+    const GAIN_VIEWS = ['summary', 'top', 'history', 'daily', 'weekly', 'monthly', 'recalls', 'failures', 'graph']
 
     /** English copy. */
     const en = {
@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
       'view.monthly': 'Monthly',
       'view.recalls': 'Recall efficiency',
       'view.failures': 'Parse failures',
+      'view.graph': 'Daily graph',
       gainLoading: 'Loading savings…',
       gainFailed: 'Could not load savings.',
       gainEmpty: 'No statistics yet — run some commands through rtk first.',
@@ -95,6 +96,12 @@ window.__ModuleLoader__.load({
       countersDenied: 'denied',
       cacheLabel: 'rewrite cache',
       cacheEntries: 'entries',
+      topHeadsLabel: 'Top rewritten',
+      topHeadsEmpty: 'no rewrites yet',
+      copyVersion: 'Copy',
+      copied: 'Copied.',
+      copyYaml: 'Copy patch YAML',
+      resetDefaults: 'Reset to defaults',
       verifyLabel: 'Filter check',
       verifyHint: 'Runs `rtk verify`: hook integrity and filter inline tests.',
       verifyRun: 'Run verify',
@@ -133,6 +140,7 @@ window.__ModuleLoader__.load({
       'view.monthly': 'По месяцам',
       'view.recalls': 'Эффективность recall',
       'view.failures': 'Ошибки парсинга',
+      'view.graph': 'График по дням',
       gainLoading: 'Загружаю экономию…',
       gainFailed: 'Не удалось загрузить экономию.',
       gainEmpty: 'Статистики пока нет — сначала выполните команды через rtk.',
@@ -179,6 +187,12 @@ window.__ModuleLoader__.load({
       countersDenied: 'отклонено',
       cacheLabel: 'кэш rewrite',
       cacheEntries: 'записей',
+      topHeadsLabel: 'Чаще всего переписываются',
+      topHeadsEmpty: 'пока без переписываний',
+      copyVersion: 'Копировать',
+      copied: 'Скопировано.',
+      copyYaml: 'Скопировать YAML для патча',
+      resetDefaults: 'Сбросить к значениям по умолчанию',
       verifyLabel: 'Проверка фильтров',
       verifyHint: 'Запускает `rtk verify`: целостность хука и встроенные тесты фильтров.',
       verifyRun: 'Проверить',
@@ -226,6 +240,50 @@ window.__ModuleLoader__.load({
       return String(Math.round(n))
     }
 
+    /** Copy text, with a legacy fallback for older WebViews. */
+    function copyText(text) {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text)
+      }
+      return new Promise((resolve, reject) => {
+        try {
+          const area = document.createElement('textarea')
+          area.value = text
+          area.style.position = 'fixed'
+          area.style.opacity = '0'
+          document.body.appendChild(area)
+          area.select()
+          const ok = document.execCommand('copy')
+          document.body.removeChild(area)
+          if (ok) resolve()
+          else reject(new Error('copy failed'))
+        } catch (error) {
+          reject(error)
+        }
+      })
+    }
+
+    /** Project directories used before, for the scope input suggestions. */
+    const PATH_HISTORY_KEY = 'dsh-rtk:paths'
+    function readPathHistory() {
+      try {
+        const raw = localStorage.getItem(PATH_HISTORY_KEY)
+        const list = JSON.parse(raw ?? '[]')
+        return Array.isArray(list) ? list.filter((item) => typeof item === 'string').slice(0, 5) : []
+      } catch {
+        return []
+      }
+    }
+    function rememberPath(next) {
+      const trimmed = String(next ?? '').trim()
+      if (!trimmed) return
+      try {
+        const list = [trimmed, ...readPathHistory().filter((item) => item !== trimmed)].slice(0, 5)
+        localStorage.setItem(PATH_HISTORY_KEY, JSON.stringify(list))
+      } catch {
+        // Private mode or disabled storage: suggestions are best-effort.
+      }
+    }
     /** Compact duration: 4097839ms -> "68m4s". */
     function fmtMs(ms) {
       if (typeof ms !== 'number' || !Number.isFinite(ms)) return '—'
@@ -263,9 +321,16 @@ window.__ModuleLoader__.load({
     /** Version card. */
     function VersionCard(props) {
       const { t, status } = props
+      const [copied, setCopied] = React.useState(false)
       if (status === null) return h('div', { className: 'rtk-status' }, t('loading'))
       if (status === false) {
         return h('div', { className: 'rtk-status rtk-error', role: 'alert' }, t('loadFailed'))
+      }
+      const doCopy = () => {
+        setCopied(false)
+        copyText(String(status.version ?? ''))
+          .then(() => setCopied(true))
+          .catch(() => setCopied(false))
       }
       return h(
         'div',
@@ -284,6 +349,14 @@ window.__ModuleLoader__.load({
           status.available ? t('available') : t('notInstalled'),
         ),
         status.available ? null : h('div', { className: 'rtk-hint' }, t('installHint')),
+        status.version
+          ? h(
+              'div',
+              { className: 'rtk-actions' },
+              h('button', { type: 'button', className: 'rtk-button', onClick: doCopy }, t('copyVersion')),
+              copied ? h('span', { className: 'rtk-status', role: 'status' }, t('copied')) : null,
+            )
+          : null,
       )
     }
 
@@ -295,10 +368,16 @@ window.__ModuleLoader__.load({
       const [view, setView] = React.useState('summary')
       const [state, setState] = React.useState({ status: 'idle', payload: null })
       const [reset, setReset] = React.useState({ armed: false, status: 'idle' })
+      const [history, setHistory] = React.useState(readPathHistory)
 
       const load = React.useCallback(() => {
+        const projectPath = scope === 'project' ? path.trim() : ''
+        if (projectPath) {
+          rememberPath(projectPath)
+          setHistory(readPathHistory())
+        }
         setState({ status: 'loading', payload: null })
-        fetchGain({ view, scope, path: scope === 'project' ? path.trim() : '' })
+        fetchGain({ view, scope, path: projectPath })
           .then((payload) => setState({ status: 'ready', payload }))
           .catch(() => setState({ status: 'failed', payload: null }))
       }, [fetchGain, view, scope, path])
@@ -381,13 +460,23 @@ window.__ModuleLoader__.load({
           ? h(
               Field,
               { id: 'rtk-path', label: t('projectPathLabel'), hint: t('projectPathHint') },
-              h('input', {
-                id: 'rtk-path',
-                className: 'rtk-input',
-                value: path,
-                placeholder: 'F:\\git\\…',
-                onChange: (event) => setPath(event.target.value),
-              }),
+              h(
+                React.Fragment,
+                null,
+                h('input', {
+                  id: 'rtk-path',
+                  className: 'rtk-input',
+                  value: path,
+                  list: 'rtk-path-history',
+                  placeholder: 'F:\\git\\…',
+                  onChange: (event) => setPath(event.target.value),
+                }),
+                h(
+                  'datalist',
+                  { id: 'rtk-path-history' },
+                  history.map((item) => h('option', { key: item, value: item })),
+                ),
+              ),
             )
           : null,
         h(
@@ -441,6 +530,7 @@ window.__ModuleLoader__.load({
       const [pending, setPending] = React.useState('')
       const [failed, setFailed] = React.useState(false)
       const [saved, setSaved] = React.useState(false)
+      const [copied, setCopied] = React.useState(false)
 
       if (!form) {
         return h(
@@ -492,6 +582,46 @@ window.__ModuleLoader__.load({
           .split(/[,\s]+/)
           .map((part) => part.trim())
           .filter((part) => part.length > 0)
+
+      const copyYaml = () => {
+        const lines = [
+          '- id: rtk',
+          '  config:',
+          `    hook: ${value.hook ?? 'deny'}`,
+          `    rules: ${value.rules !== false}`,
+          `    tools: [${listToText(value.tools)}]`,
+          `    exclude: [${listToText(value.exclude)}]`,
+          `    timeoutMs: ${value.timeoutMs ?? 4000}`,
+        ]
+        setCopied(false)
+        setFailed(false)
+        copyText(`${lines.join('\n')}\n`)
+          .then(() => setCopied(true))
+          .catch(() => setFailed(true))
+      }
+
+      const resetDefaults = async () => {
+        if (typeof props.setField !== 'function') return
+        setFailed(false)
+        setSaved(false)
+        setCopied(false)
+        setPending('defaults')
+        try {
+          const defaults = { hook: 'deny', rules: true, tools: ['pwsh', 'bash'], exclude: [], timeoutMs: 4000 }
+          for (const [field, next] of Object.entries(defaults)) {
+            const accepted = await props.setField(field, next)
+            if (!accepted) {
+              setFailed(true)
+              return
+            }
+          }
+          setSaved(true)
+        } catch {
+          setFailed(true)
+        } finally {
+          setPending('')
+        }
+      }
 
       return h(
         React.Fragment,
@@ -577,15 +707,27 @@ window.__ModuleLoader__.load({
             },
           }),
         ),
-        failed
-          ? h('div', { className: 'rtk-status rtk-error', role: 'alert' }, t('failed'))
-          : pending !== ''
-            ? h('div', { className: 'rtk-status', role: 'status' }, t('applying'))
-            : saved
-              ? h('div', { className: 'rtk-status', role: 'status' }, t('applied'))
-              : !writable
-                ? h('div', { className: 'rtk-status' }, t('readonly'))
-                : null,
+        h(
+          'div',
+          { className: 'rtk-actions' },
+          h('button', { type: 'button', className: 'rtk-button', disabled, onClick: copyYaml }, t('copyYaml')),
+          h(
+            'button',
+            { type: 'button', className: 'rtk-button', disabled, onClick: resetDefaults },
+            t('resetDefaults'),
+          ),
+        ),
+        copied
+          ? h('div', { className: 'rtk-status', role: 'status' }, t('copied'))
+          : failed
+            ? h('div', { className: 'rtk-status rtk-error', role: 'alert' }, t('failed'))
+            : pending !== ''
+              ? h('div', { className: 'rtk-status', role: 'status' }, t('applying'))
+              : saved
+                ? h('div', { className: 'rtk-status', role: 'status' }, t('applied'))
+                : !writable
+                  ? h('div', { className: 'rtk-status' }, t('readonly'))
+                  : null,
       )
     }
 
@@ -617,6 +759,13 @@ window.__ModuleLoader__.load({
         status && status !== false && typeof status.cacheSize === 'number'
           ? `${status.cacheSize} ${t('cacheEntries')}`
           : '—'
+      const topHeads =
+        status &&
+        status !== false &&
+        Array.isArray(status.stats?.topHeads) &&
+        status.stats.topHeads.length > 0
+          ? status.stats.topHeads.map(([head, count]) => `${head} ×${count}`).join(' · ')
+          : t('topHeadsEmpty')
 
       return h(
         React.Fragment,
@@ -628,6 +777,7 @@ window.__ModuleLoader__.load({
           { className: 'rtk-card' },
           h('div', null, `${t('hookStateLabel')}: `, h('b', null, hookState)),
           h('div', { className: 'rtk-status' }, `${t('countersLabel')}: ${counters}`),
+          h('div', { className: 'rtk-status' }, `${t('topHeadsLabel')}: ${topHeads}`),
           h('div', { className: 'rtk-status' }, `${t('cacheLabel')}: ${cache}`),
         ),
         h(

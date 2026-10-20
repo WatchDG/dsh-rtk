@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-20
+
+### Added
+
+- One more savings breakdown in Settings → RTK: the daily ASCII graph
+  (`rtk gain --graph`).
+- Top rewritten command heads in diagnostics (`byHead` counters on
+  `GET /rtk/status`, ranked top 8).
+- Small UX improvements on the settings page: one-click version copy, project
+  directory history, copy-patch-YAML button, and reset-behavior-to-defaults.
+
 ## [1.2.0] - 2026-10-20
 
 ### Added
@@ -55,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copyright holder and package author are now Baranov Grigoriy Vladimirovich.
 - Replaced the funnel icon with an RTK wordmark on a black tile.
 
+[1.3.0]: https://github.com/WatchDG/dsh-rtk/releases/tag/v1.3.0
 [1.2.0]: https://github.com/WatchDG/dsh-rtk/releases/tag/v1.2.0
 [1.1.0]: https://github.com/WatchDG/dsh-rtk/releases/tag/v1.1.0
 [1.0.0]: https://github.com/WatchDG/dsh-rtk/releases/tag/v1.0.0

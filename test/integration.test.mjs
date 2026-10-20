@@ -38,7 +38,17 @@ test('a real rtk binary serves a text breakdown', { skip }, async () => {
   const top = await runner.getGain({ view: 'top' })
   assert.equal(top.ok, true)
   assert.equal(top.kind, 'text')
-  assert.match(top.text, /RTK Token Savings/)
+  // Content depends on the machine's tracking database (it may be freshly
+  // reset); the boundary only guarantees passthrough.
+  assert.ok(top.text.length > 0)
+})
+
+test('a real rtk binary serves the daily graph as text', { skip }, async () => {
+  const runner = createRtkRunner({ timeoutMs: 15000 })
+  const graph = await runner.getGain({ view: 'graph' })
+  assert.equal(graph.ok, true)
+  assert.equal(graph.kind, 'text')
+  assert.ok(graph.text.length > 0)
 })
 
 test('a real rtk binary verifies its filters', { skip }, async () => {

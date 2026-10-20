@@ -1,6 +1,6 @@
 {
   "name": "dsh-rtk",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "RTK (Rust Token Killer) integration for DeepSeek Harness: prompt rules and a pre-execution hook for token-optimized terminal output.",
