@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "RTK Command Filter",
+    "description": "Routes terminal commands through rtk (Rust Token Killer) and cuts command-output tokens: prompt rules plus a pre-execution hook that returns the exact rtk form of a raw command."
+  }
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="RTK">
+  <!-- RTK wordmark outlines derived from JetBrains Mono ExtraBold (SIL Open Font License 1.1). -->
+  <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="#000000" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="1"/>
+  <g transform="translate(7.1918 42.0000) scale(0.027397 -0.027397)" fill="#FFFFFF">
+    <path d="M66 0V730H300Q378 730 435.0 703.0Q492 676 523.5 626.0Q555 576 555 508Q555 437 520.5 381.0Q486 325 427 300L565 0H402L284 276H214V0ZM214 406H300Q350 406 377.5 431.0Q405 456 405 501Q405 548 377.5 574.0Q350 600 300 600H214Z M825 0V595H640V730H1160V595H975V0Z M1235 0V730H1385V444H1455L1577 730H1739L1587 385L1745 0H1581L1456 313H1385V0Z"/>
+  </g>
+</svg>

@@ -1,0 +1,13 @@
+# RTK integration for DeepSeek Harness.
+# Override this row in the profile's own patch layer to tune behavior, e.g.:
+#
+#   - id: rtk
+#     config:
+#       hook: off                  # deny (default) | off
+#       rules: true                # register the prompt section
+#       tools: [pwsh, bash]        # shell tools the hook watches
+#       exclude: [make, msbuild]   # extra command heads never rewritten
+#       timeoutMs: 4000            # per rtk invocation
+- insert:
+    - id: rtk
+      name: dsh-rtk
