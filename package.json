@@ -1,6 +1,6 @@
 {
   "name": "dsh-rtk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "RTK (Rust Token Killer) integration for DeepSeek Harness: prompt rules and a pre-execution hook for token-optimized terminal output.",
@@ -28,12 +28,14 @@
   },
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
+    "client.js",
     "lib/*.js",
     "cordis.patch.yml",
     "locale/*.json",
@@ -45,13 +47,19 @@
   ],
   "scripts": {
     "test": "node --test",
-    "test:unit": "node --test test/command.test.mjs test/plugin.test.mjs test/manifest.test.mjs",
+    "test:unit": "node --test test/command.test.mjs test/plugin.test.mjs test/manifest.test.mjs test/status.test.mjs",
     "test:integration": "node --test test/integration.test.mjs",
     "pack:check": "npm pack --dry-run"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
     }
   }
 }

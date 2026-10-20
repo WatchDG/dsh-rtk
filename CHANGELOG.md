@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-20
+
+### Added
+
+- Settings → RTK section with the live RTK version (`GET /rtk/status` backed
+  by `rtk --version`, web `client.js` with English and Russian copy).
+- `createRtkRunner().getVersion()` alongside `isAvailable()`; the status route
+  reports `{ available, version }`.
+
 ## [1.0.0] - 2026-10-20
 
 ### Added
@@ -28,4 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copyright holder and package author are now Baranov Grigoriy Vladimirovich.
 - Replaced the funnel icon with an RTK wordmark on a black tile.
 
+[1.1.0]: https://github.com/WatchDG/dsh-rtk/releases/tag/v1.1.0
 [1.0.0]: https://github.com/WatchDG/dsh-rtk/releases/tag/v1.0.0

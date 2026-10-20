@@ -12,6 +12,7 @@ const pkg = JSON.parse(read('package.json'))
 
 const REQUIRED_FILES = [
   'index.js',
+  'client.js',
   'lib/config.js',
   'lib/command.js',
   'lib/rules.js',
@@ -35,13 +36,17 @@ test('manifest declares a DSH bundle', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
   assert.equal(pkg.type, 'module')
   assert.equal(pkg.license, 'Apache-2.0')
-  assert.deepEqual(pkg.dsh, { bundle: { patch: './cordis.patch.yml' } })
+  assert.deepEqual(pkg.dsh.bundle, { patch: './cordis.patch.yml' })
+  assert.equal(pkg.dsh.client.platform, 'web')
+  assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'))
   assert.equal(pkg.exports['.'], './index.js')
+  assert.equal(pkg.exports['./client'], './client.js')
   assert.equal(pkg.exports['./icon'], './icon.svg')
 })
 
 test('every runtime file is shipped by npm', () => {
   assert.ok(pkg.files.includes('index.js'))
+  assert.ok(pkg.files.includes('client.js'))
   assert.ok(pkg.files.includes('lib/*.js'))
   assert.ok(pkg.files.includes('cordis.patch.yml'))
   assert.ok(pkg.files.includes('locale/*.json'))

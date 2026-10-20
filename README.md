@@ -111,6 +111,12 @@ replacement is therefore the only way to route a raw command through rtk before
 the shell sees it. This costs one extra model turn per raw command; with the
 rules in place the model normally writes `rtk …` directly.
 
+### 3. Settings page
+
+**Settings → RTK** shows the live RTK version read from the Host with
+`rtk --version` (`GET /rtk/status`). When the binary is missing, the section
+says so and points to the installation guide instead of a version number.
+
 ## Configuration
 
 Every field is optional. Override the `rtk` row in the profile's patch layer.
@@ -162,10 +168,11 @@ the system are excluded automatically: `ls`, `dir`, `tree`, `find`, `cat`,
 1. `rtk --version` and `rtk gain` work in a terminal.
 2. The **Plugins** page (and the read-only **Settings → Plugins** list) shows
    **RTK Command Filter** / **RTK: фильтр вывода команд**, and it is enabled.
-3. In a new session, ask the agent to run `git status`: the first `pwsh` call is
+3. **Settings → RTK** shows the same version as `rtk --version` in a terminal.
+4. In a new session, ask the agent to run `git status`: the first `pwsh` call is
    rejected with a reason that contains `rtk git status`, and the retried call is
    `rtk git status`.
-4. `rtk gain` shows the recorded savings. Statistics are global to RTK, not
+5. `rtk gain` shows the recorded savings. Statistics are global to RTK, not
    specific to this plugin.
 
 ## Troubleshooting
@@ -194,11 +201,12 @@ Layout:
 
 ```
 index.js              Host entry point: exports apply / name / inject
+client.js             Settings → RTK page: live `rtk --version` (web client)
 lib/config.js         config defaults and normalization
 lib/command.js        pure command analysis and deny message
 lib/rules.js          system-prompt rules text and section order
-lib/runner.js         execFile boundary for `rtk`, availability probe, rewrite cache
-lib/plugin.js         context wiring (prompt section + pre-execute listener)
+lib/runner.js         execFile boundary for `rtk`, availability probe, version, rewrite cache
+lib/plugin.js         context wiring (prompt section + pre-execute listener + GET /rtk/status)
 test/                 node:test suites (unit, manifest, integration)
 ```
 
